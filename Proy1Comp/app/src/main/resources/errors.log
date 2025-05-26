@@ -1,0 +1,7 @@
+=== REGISTRO DE ERRORES ===
+TIPO       LÍNEA COL   MENSAJE
+-----------------------------------------------------
+LEXICO     3     1     Caracter ilegal '$'
+LEXICO     3     3     Caracter ilegal '%'
+LEXICO     3     5     Caracter ilegal '°'
+SINTÁCTICO 0     0     Error en la estructura del programa

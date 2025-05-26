@@ -1,0 +1,330 @@
+
+package org.example.ParserLexer;
+import java_cup.runtime.*;
+import org.example.ErrorHandler;
+
+action code {:
+    /* CÓDIGO DE JAVA */
+    public void hola(){
+        System.out.println("Inicio Cup");
+    }
+
+    public void adios(){
+        System.out.println("Fin Cup");
+    }
+:}
+
+parser code {:
+    // Conectar este parser con un scanner
+    BasicLexerCup lex;
+    public static final int EXPECTED_CONFLICTS = 12;
+    
+    // Variables para manejo de errores
+    public int errorCount = 0;
+    private ErrorHandler errorHandler;
+    
+    // Método para establecer el ErrorHandler
+    public void setErrorHandler(ErrorHandler handler) {
+        this.errorHandler = handler;
+    }
+    
+    // Método para reportar errores
+    public void report_error(String message, Object info) {
+        StringBuilder errorMessage = new StringBuilder();
+        int line = 0;
+        int column = 0;
+        
+        if (info instanceof java_cup.runtime.Symbol) {
+            java_cup.runtime.Symbol s = (java_cup.runtime.Symbol) info;
+            if (s.left >= 0) {
+                line = s.left + 1;
+                if (s.right >= 0) {
+                    column = s.right + 1;
+                }
+            }
+        }
+        
+        // Usar el ErrorHandler si está disponible
+        if (errorHandler != null) {
+            errorHandler.reportError(line, column, message, "SINTÁCTICO");
+        } else {
+            // Fallback al comportamiento original
+            errorMessage.append("Error sintáctico: ");
+            if (line > 0) {
+                errorMessage.append("línea " + line);
+                if (column > 0) {
+                    errorMessage.append(", columna " + column);
+                }
+            }
+            errorMessage.append(": " + message);
+            //System.err.println(errorMessage.toString());
+        }
+        
+        errorCount++;
+    }
+    
+    // Método para recuperación de errores
+    public void syntax_error(Symbol cur_token) {
+        String tokenName = symbl_name_from_id(cur_token.sym);
+        String tokenValue = (cur_token.value != null) ? cur_token.value.toString() : "?";
+        
+        //report_error("Error cerca de " + tokenName + " '" + tokenValue + "'", cur_token);
+        
+        // Si hay un ErrorHandler y está en pánico, detener el análisis
+        if (errorHandler != null && errorHandler.isInPanicMode() && !errorHandler.shouldContinue()) {
+            throw new RuntimeException("Análisis sintáctico abortado en modo pánico");
+        }
+    }
+    
+    // Método para errores irrecuperables
+    public void unrecovered_syntax_error(Symbol cur_token) throws java.lang.Exception {
+        // Entrar en modo pánico si hay un ErrorHandler
+        if (errorHandler != null) {
+            errorHandler.enterPanicMode();
+            report_error("Error sintáctico fatal. Compilación abortada", cur_token);
+        } else {
+            report_error("Error sintáctico fatal. Compilación abortada", cur_token);
+        }
+        
+        throw new java.lang.Exception("Error sintáctico irrecuperable");
+    }
+    
+    
+    public String symbl_name_from_id(int id) {
+        return (id >= 0 && id < sym.terminalNames.length) ? 
+               sym.terminalNames[id] : "UNKNOWN_TOKEN";
+    }
+
+    @SuppressWarnings("deprecation")
+    public parser(BasicLexerCup lex){
+        this.lex = lex;
+        this.symbolFactory = new DefaultSymbolFactory();
+        
+        // Si el lexer tiene un ErrorHandler, lo usamos
+        if (lex != null) {
+            try {
+                // Usamos reflection para obtener el errorHandler del lexer
+                java.lang.reflect.Field f = lex.getClass().getDeclaredField("errorHandler");
+                f.setAccessible(true);
+                Object handler = f.get(lex);
+                if (handler instanceof ErrorHandler) {
+                    this.errorHandler = (ErrorHandler) handler;
+                    System.out.println("ErrorHandler conectado desde lexer a parser");
+                }
+            } catch (Exception e) {
+                System.err.println("No se pudo obtener ErrorHandler del lexer: " + e.getMessage());
+            }
+        }
+    }
+:}
+
+init with {: :};
+
+scan with {: return lex.next_token(); :};
+
+/* Terminales*/
+terminal IF, ELIF, ELSE, DO, WHILE, FOR, SWITCH, CASE, BREAK, DEFAULT;
+terminal RETURN, LEER, IMPRIMIR, GLOBAL, FUNCTION, MAIN;
+terminal ARRX, MATRX,STRUCT,PARAM,IN,PUNTO,VOID;
+terminal STRING_LITERAL, CHAR_LITERAL, INTEGER_T, INTEGER_LITERAL, IDENTIFIER, FLOAT_T, CHAR_T, STRING_T, BOOL, FALSE, TRUE;
+terminal MENOR, MAYOR, MENORIGUAL, MAYORIGUAL, DIFERENTE, CONJUNCION, DISYUNCION, NEGACION, COMPARACION, ASIGNA;
+terminal SUMA, RESTA, MULTIPLICA, DIVIDE, MODULO, POTENCIA, INCREMENTO, DECREMENTO;
+terminal COMA, DOSPUNTOS, ESH_IZ, EZH_DE, PIPE, FINLINEA, INIT_COMMENT, END_COMMENT, INIT_BLOC, END_BLOC;
+terminal BRACEDER, BRACEIZQ;
+terminal FLOAT_LITERAL;
+
+non terminal programa, declaraciones, declaracion, tipo_dato, funcion_main, bloque, sentencias, sentencia;
+non terminal exprArit, exprLog, exprRel, factor, exprPrin, termino;
+non terminal operadorLog, operadorRel, operadorArit, operandoUnario;
+non terminal accesoArreglo, lista_parametros, parametro, lista_expresiones;
+non terminal estructura_control, init_for, default_case, if_stmt, elif_list, else_stmt, do_while;
+non terminal for_stmt, switch_stmt, case_list, case_item, case_value, declaracion_init;
+non terminal declaracion_var, asignacion, llamada_funcion, retorno, lectura, escritura, funcion;
+non terminal signo_unario, comentario;
+
+/* Precedencias */
+precedence left DISYUNCION;
+precedence left CONJUNCION;
+precedence left NEGACION;
+precedence nonassoc MAYOR, MENOR, MAYORIGUAL, MENORIGUAL, COMPARACION, DIFERENTE;
+precedence left SUMA, RESTA;
+precedence left MULTIPLICA, DIVIDE, MODULO;
+precedence right POTENCIA;
+precedence right INCREMENTO, DECREMENTO;
+
+/* Producción inicial */
+start with programa;
+
+/* Programa */
+programa ::= declaraciones funcion_main declaraciones
+            | error {:
+                report_error("Error en la estructura del programa", cur_token);
+              :};
+
+/* Declaraciones */
+declaraciones ::= declaraciones declaracion 
+                | /* vacío */;
+
+declaracion ::= declaracion_var
+              | funcion 
+              | comentario;
+
+/* Comentarios - Simplificado para evitar conflictos */
+comentario ::= INIT_COMMENT END_COMMENT;
+
+/* Tipos de datos */
+tipo_dato ::= INTEGER_T 
+            | FLOAT_T 
+            | CHAR_T 
+            | STRING_T 
+            | BOOL 
+            | ARRX tipo_dato 
+            | MATRX tipo_dato;
+
+/* Funciones */
+funcion ::= FUNCTION tipo_dato IDENTIFIER ESH_IZ lista_parametros EZH_DE bloque;
+
+lista_parametros ::= lista_parametros COMA parametro 
+                   | parametro 
+                   | /* vacío */;
+
+parametro ::= tipo_dato IDENTIFIER;
+
+funcion_main ::= MAIN ESH_IZ EZH_DE bloque;
+
+/* Bloques y sentencias */
+bloque ::= INIT_BLOC sentencias END_BLOC;
+
+sentencias ::= sentencias sentencia 
+             | /* vacío */;
+
+sentencia ::= estructura_control 
+            | declaracion_var FINLINEA 
+            | asignacion FINLINEA 
+            | retorno FINLINEA 
+            | lectura FINLINEA 
+            | escritura FINLINEA 
+            | BREAK FINLINEA 
+            | llamada_funcion FINLINEA
+            | comentario;
+
+/* Estructuras de control */
+estructura_control ::= if_stmt 
+                     | do_while 
+                     | for_stmt 
+                     | switch_stmt
+                     | error {:
+                         report_error("Error en estructura de control", cur_token);
+                       :};
+
+if_stmt ::= IF ESH_IZ exprPrin EZH_DE bloque elif_list else_stmt;
+
+elif_list ::= ELIF ESH_IZ exprPrin EZH_DE bloque elif_list 
+            | /* vacío */;
+
+else_stmt ::= ELSE bloque 
+            | /* vacío */;
+ 
+do_while ::= DO bloque WHILE ESH_IZ exprPrin EZH_DE FINLINEA;
+
+for_stmt ::= FOR ESH_IZ init_for FINLINEA exprPrin FINLINEA exprPrin EZH_DE bloque;
+
+init_for ::= declaracion_var 
+           | asignacion;
+
+switch_stmt ::= SWITCH ESH_IZ exprPrin EZH_DE INIT_BLOC case_list default_case END_BLOC;
+
+case_list ::= case_list case_item
+            | /* vacío */;
+
+case_item ::= CASE case_value DOSPUNTOS sentencias;
+
+case_value ::= INTEGER_LITERAL 
+             | CHAR_LITERAL;
+
+default_case ::= DEFAULT DOSPUNTOS sentencias
+               | /* vacío */;
+
+/* Variables y asignaciones */
+declaracion_var ::= tipo_dato IDENTIFIER declaracion_init
+                  | tipo_dato IDENTIFIER PIPE exprPrin PIPE exprPrin
+                  | GLOBAL tipo_dato IDENTIFIER declaracion_init FINLINEA;
+
+declaracion_init ::= ASIGNA exprPrin
+                   | /* vacío */;
+
+asignacion ::= IDENTIFIER ASIGNA exprPrin 
+             | accesoArreglo ASIGNA exprPrin;
+
+/* Expresiones */
+exprPrin ::= exprLog;
+
+exprLog ::= exprLog operadorLog exprRel 
+          | exprRel 
+          | NEGACION exprRel;
+
+operadorLog ::= DISYUNCION 
+              | CONJUNCION;
+
+exprRel ::= exprArit operadorRel exprArit 
+          | exprArit;
+
+operadorRel ::= MAYOR 
+              | MENOR 
+              | MAYORIGUAL 
+              | MENORIGUAL 
+              | COMPARACION 
+              | DIFERENTE;
+
+exprArit ::= exprArit operadorArit termino 
+           | termino 
+           | operandoUnario;
+
+termino ::= termino MULTIPLICA factor 
+          | termino DIVIDE factor 
+          | termino MODULO factor 
+          | factor;
+
+operadorArit ::= SUMA 
+               | RESTA 
+               | MULTIPLICA 
+               | DIVIDE 
+               | MODULO 
+               | POTENCIA;
+
+operandoUnario ::= signo_unario factor 
+                 | INCREMENTO IDENTIFIER 
+                 | DECREMENTO IDENTIFIER;
+
+signo_unario ::= SUMA 
+               | RESTA;
+
+/* Acceso a arreglos */
+accesoArreglo ::= IDENTIFIER BRACEIZQ exprPrin BRACEDER 
+                | IDENTIFIER BRACEIZQ exprPrin COMA exprPrin BRACEDER;
+
+/* Llamadas a funciones */
+llamada_funcion ::= IDENTIFIER ESH_IZ lista_expresiones EZH_DE;
+
+lista_expresiones ::= lista_expresiones COMA exprPrin 
+                    | exprPrin 
+                    | /* vacío */;
+
+/* Retorno, lectura y escritura */
+retorno ::= RETURN exprPrin;
+
+lectura ::= LEER ESH_IZ IDENTIFIER EZH_DE;
+
+escritura ::= IMPRIMIR ESH_IZ exprPrin EZH_DE;
+
+/* Literales y valores */
+factor ::= INTEGER_LITERAL 
+         | FLOAT_LITERAL 
+         | CHAR_LITERAL 
+         | STRING_LITERAL 
+         | TRUE 
+         | FALSE 
+         | llamada_funcion 
+         | accesoArreglo 
+         | IDENTIFIER 
+         | ESH_IZ exprPrin EZH_DE;
