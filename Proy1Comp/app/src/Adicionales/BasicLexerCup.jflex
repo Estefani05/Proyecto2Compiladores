@@ -21,30 +21,14 @@ import org.example.ErrorHandler;
 
     private FileWriter tokenWriter;
 
-    // Declaración de la tabla de símbolos
-    private Map<String, Simbolo> tablaSimbolos = new HashMap<>();
-
-    // Definición de la clase Simbolo
-    private class Simbolo {
-        public String nombre;
-        public String tipo;
-        public int linea;
-        public int columna;
-
-        public Simbolo(String nombre, String tipo, int linea, int columna) {
-            this.nombre = nombre;
-            this.tipo = tipo;
-            this.linea = linea;
-            this.columna = columna;
-        }
-    }
+   
 
     // Método para inicializar el logger de tokens
     // Entrada: Ninguna
     // Salida: Archivo "tokens.log"
     private void initTokenLogger() {
         try {
-            tokenWriter = new FileWriter("Proy1Comp/app/src/main/resources/tokens.log");
+            tokenWriter = new FileWriter(System.getProperty("user.dir")+"/app/src/main/resources/tokens.log");
             tokenWriter.write("=== TOKENS ENCONTRADOS ===\n");
             tokenWriter.write(String.format("%-20s %-20s %-10s %-10s\n", 
                                 "TOKEN", "LEXEMA", "LINEA", "COLUMNA"));
@@ -68,36 +52,8 @@ import org.example.ErrorHandler;
         }
     }
 
-    /*
-    // Método para agregar un símbolo a la tabla
-    // Entrada: nombre y tipo del símbolo
-    // Salida: símbolo registrado si no existía previamente
-    private void agregarSimbolo(String nombre, String tipo) {
-        if (!tablaSimbolos.containsKey(nombre)) {
-            tablaSimbolos.put(nombre, new Simbolo(nombre, tipo, yyline + 1, yycolumn + 1));
-        }
-    }
-    */
 
-    // Método para exportar la tabla de símbolos a un archivo
-    // Entrada: ninguna
-    // Salida: archivo "tabla_simbolos.log" generado con los símbolos registrados
-    public void exportarTablaSimbolos() {
-        try (FileWriter writer = new FileWriter("Proy1Comp/app/src/main/resources/tabla_simbolos.log")) {
-            writer.write("=== TABLA DE SIMBOLOS ===\n");
-            writer.write(String.format("%-20s %-20s %-10s %-10s\n", "NOMBRE", "TIPO", "LINEA", "COLUMNA"));
 
-            for (Simbolo s : tablaSimbolos.values()) {
-                writer.write(String.format("%-20s %-20s %-10d %-10d\n", 
-                    s.nombre, s.tipo, s.linea, s.columna));
-            }
-            writer.flush();
-            System.out.println("Tabla de simbolos exportada correctamente.");
-        } catch (IOException e) {
-            System.err.println("Error exportando tabla de simbolos: " + e.getMessage());
-            e.printStackTrace();
-        }
-    }
 
 
     // Método para crear un símbolo con tipo dado
@@ -116,21 +72,6 @@ import org.example.ErrorHandler;
     }
 
 
-  // Método para cerrar el logger de tokens y exportar la tabla de símbolos
-  // Entrada: ninguna
-  // Salida: archivo de tokens cerrado y tabla de símbolos exportada
-    public void closeTokenLogger() {
-        if (tokenWriter != null) {
-            try {
-                tokenWriter.close();
-                // Exportar tabla de símbolos al finalizar
-                //exportarTablaSimbolos();
-            } catch (IOException e) {
-                System.err.println("Error cerrando archivo de tokens: " + e.getMessage());
-                e.printStackTrace();
-            }
-        }
-    }
     
 
 
