@@ -21,7 +21,7 @@ import org.example.ErrorHandler;
 
     private FileWriter tokenWriter;
 
-   
+                                                                             
 
     // Método para inicializar el logger de tokens
     // Entrada: Ninguna
@@ -109,7 +109,7 @@ import org.example.ErrorHandler;
 
 %eof{
     System.out.println("Cerrando analizador lexico...");
-    closeTokenLogger();
+    //closeTokenLogger();
     System.out.println("Analizador lexico cerrado correctamente.");
 %eof}
 
