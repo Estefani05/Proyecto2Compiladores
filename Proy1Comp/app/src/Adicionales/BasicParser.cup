@@ -1,12 +1,13 @@
-
 package org.example.ParserLexer;
 import java_cup.runtime.*;
 import org.example.ErrorHandler;
+import java.util.HashMap;
+import java.util.ArrayList;
 
 action code {:
     /* CÓDIGO DE JAVA */
     public void hola(){
-        System.out.println("Inicio Cup");
+        System.out.println("Inicio Cup"); 
     }
 
     public void adios(){
@@ -28,6 +29,135 @@ parser code {:
         this.errorHandler = handler;
     }
     
+    // Tabla de símbolos: scope -> lista de tipos de variables
+    HashMap<String, ArrayList<String>> SymbolTable = new HashMap<>();
+    
+    // Scope actual
+    String currentScope = "global";
+    int scopeCounter = 0;
+    
+    // Método para validar si una variable ya existe en el scope actual
+    public boolean isVariableDeclared(String varName) {
+        if (!SymbolTable.containsKey(currentScope)) {
+            return false;
+        }
+        
+        ArrayList<String> variables = SymbolTable.get(currentScope);
+        for (String var : variables) {
+            if (var.startsWith(varName + ":")) {
+                return true;
+            }
+        }
+        return false;
+    }
+    
+    // Método para agregar una variable a la tabla de símbolos
+    public void addToSymbolTable(String varName, String varType) {
+        if (isVariableDeclared(varName)) {
+            report_error("Variable '" + varName + "' ya ha sido declarada en el scope '" + currentScope + "'", null);
+            return;
+        }
+        
+        if (!SymbolTable.containsKey(currentScope)) {
+            SymbolTable.put(currentScope, new ArrayList<>());
+        }
+        
+        SymbolTable.get(currentScope).add(varName + ":" + varType);
+        System.out.println("Variable agregada: " + varName + ":" + varType + " en scope: " + currentScope);
+    }
+    
+    // Método para agregar una función a la tabla de símbolos
+    public void addFunctionToSymbolTable(String funcName, String returnType, ArrayList<String> parameters) {
+        if (isVariableDeclared(funcName)) {
+            report_error("Función '" + funcName + "' ya ha sido declarada", null);
+            return;
+        }
+        
+        if (!SymbolTable.containsKey(currentScope)) {
+            SymbolTable.put(currentScope, new ArrayList<>());
+        }
+        
+        StringBuilder funcSignature = new StringBuilder();
+        funcSignature.append(funcName).append(":function(");
+        
+        for (int i = 0; i < parameters.size(); i++) {
+            funcSignature.append(parameters.get(i));
+            if (i < parameters.size() - 1) {
+                funcSignature.append(",");
+            }
+        }
+        
+        funcSignature.append(")->").append(returnType);
+        
+        SymbolTable.get(currentScope).add(funcSignature.toString());
+        System.out.println("Función agregada: " + funcSignature.toString() + " en scope: " + currentScope);
+    }
+    
+    // Método para validar si una variable existe en cualquier scope accesible
+    public boolean variableExists(String varName) {
+        // Buscar en scope actual
+        if (isVariableDeclared(varName)) {
+            return true;
+        }
+        
+        // Buscar en scope global
+        if (!currentScope.equals("global") && SymbolTable.containsKey("global")) {
+            ArrayList<String> globalVars = SymbolTable.get("global");
+            for (String var : globalVars) {
+                if (var.startsWith(varName + ":")) {
+                    return true;
+                }
+            }
+        }
+        
+        return false;
+    }
+    
+    // Método para validar si una función existe
+    public boolean functionExists(String funcName) {
+        if (SymbolTable.containsKey("global")) {
+            ArrayList<String> globalItems = SymbolTable.get("global");
+            for (String item : globalItems) {
+                if (item.startsWith(funcName + ":function")) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+    
+    // Método para entrar en un nuevo scope
+    public void enterScope(String scopeName) {
+        currentScope = scopeName;
+        if (!SymbolTable.containsKey(currentScope)) {
+            SymbolTable.put(currentScope, new ArrayList<>());
+        }
+        System.out.println("Entrando al scope: " + currentScope);
+    }
+    
+    // Método para salir del scope actual
+    public void exitScope() {
+        System.out.println("Saliendo del scope: " + currentScope);
+        currentScope = "global";
+    }
+    
+    // Método para generar un scope único para bloques anónimos
+    public String generateUniqueScope() {
+        return currentScope + "_block_" + (++scopeCounter);
+    }
+    
+    // Método para imprimir la tabla de símbolos (debug)
+    public void printSymbolTable() {
+        System.out.println("\n=== TABLA DE SÍMBOLOS ===");
+        for (String scope : SymbolTable.keySet()) {
+            System.out.println("Scope: " + scope);
+            for (String symbol : SymbolTable.get(scope)) {
+                System.out.println("  " + symbol);
+            }
+        }
+        System.out.println("========================\n");
+    }
+
     // Método para reportar errores
     public void report_error(String message, Object info) {
         StringBuilder errorMessage = new StringBuilder();
@@ -57,7 +187,7 @@ parser code {:
                 }
             }
             errorMessage.append(": " + message);
-            //System.err.println(errorMessage.toString());
+            System.err.println(errorMessage.toString());
         }
         
         errorCount++;
@@ -67,8 +197,6 @@ parser code {:
     public void syntax_error(Symbol cur_token) {
         String tokenName = symbl_name_from_id(cur_token.sym);
         String tokenValue = (cur_token.value != null) ? cur_token.value.toString() : "?";
-        
-        //report_error("Error cerca de " + tokenName + " '" + tokenValue + "'", cur_token);
         
         // Si hay un ErrorHandler y está en pánico, detener el análisis
         if (errorHandler != null && errorHandler.isInPanicMode() && !errorHandler.shouldContinue()) {
@@ -89,7 +217,6 @@ parser code {:
         throw new java.lang.Exception("Error sintáctico irrecuperable");
     }
     
-    
     public String symbl_name_from_id(int id) {
         return (id >= 0 && id < sym.terminalNames.length) ? 
                sym.terminalNames[id] : "UNKNOWN_TOKEN";
@@ -99,6 +226,9 @@ parser code {:
     public parser(BasicLexerCup lex){
         this.lex = lex;
         this.symbolFactory = new DefaultSymbolFactory();
+        
+        // Inicializar scope global
+        SymbolTable.put("global", new ArrayList<>());
         
         // Si el lexer tiene un ErrorHandler, lo usamos
         if (lex != null) {
@@ -156,175 +286,433 @@ precedence right INCREMENTO, DECREMENTO;
 start with programa;
 
 /* Programa */
-programa ::= declaraciones funcion_main declaraciones
+programa ::= declaraciones:d funcion_main:m declaraciones:d2
+            {: 
+                RESULT = "programa";
+                System.out.println("Programa parseado correctamente");
+                printSymbolTable();
+            :}
             | error {:
                 report_error("Error en la estructura del programa", cur_token);
+                RESULT = "error_programa";
               :};
 
 /* Declaraciones */
-declaraciones ::= declaraciones declaracion 
-                | /* vacío */;
+declaraciones ::= declaraciones:d declaracion:dec 
+                {: RESULT = "declaraciones"; :}
+                | /* vacío */
+                {: RESULT = "declaraciones_vacias"; :};
 
-declaracion ::= declaracion_var
-              | funcion 
-              | comentario;
+declaracion ::= declaracion_var:dv
+              {: RESULT = dv; :}
+              | funcion:f
+              {: RESULT = f; :}
+              | comentario:c
+              {: RESULT = c; :};
 
 /* Comentarios - Simplificado para evitar conflictos */
-comentario ::= INIT_COMMENT END_COMMENT;
+comentario ::= INIT_COMMENT END_COMMENT
+             {: RESULT = "comentario"; :};
 
 /* Tipos de datos */
 tipo_dato ::= INTEGER_T 
+            {: RESULT = "int"; :}
             | FLOAT_T 
+            {: RESULT = "float"; :}
             | CHAR_T 
+            {: RESULT = "char"; :}
             | STRING_T 
+            {: RESULT = "string"; :}
             | BOOL 
-            | ARRX tipo_dato 
-            | MATRX tipo_dato;
+            {: RESULT = "bool"; :}
+            | ARRX tipo_dato:t 
+            {: RESULT = "array_" + t; :}
+            | MATRX tipo_dato:t
+            {: RESULT = "matrix_" + t; :};
 
 /* Funciones */
-funcion ::= FUNCTION tipo_dato IDENTIFIER ESH_IZ lista_parametros EZH_DE bloque;
+funcion ::= FUNCTION tipo_dato:tipo IDENTIFIER:nombre ESH_IZ lista_parametros:params EZH_DE 
+           {:
+               String oldScope = currentScope;
+               enterScope(nombre.toString());
+               
+               // Crear lista de parámetros para la función
+               ArrayList<String> paramList = new ArrayList<>();
+               if (params != null && !params.toString().equals("sin_parametros")) {
+                   String[] paramArray = params.toString().split(",");
+                   for (String param : paramArray) {
+                       paramList.add(param.trim());
+                   }
+               }
+               
+               // Cambiar temporalmente al scope global para agregar la función
+               currentScope = "global";
+               addFunctionToSymbolTable(nombre.toString(), tipo.toString(), paramList);
+               currentScope = nombre.toString();
+           :}
+           bloque:b
+           {:
+               exitScope();
+               RESULT = "funcion_" + nombre;
+           :};
 
-lista_parametros ::= lista_parametros COMA parametro 
-                   | parametro 
-                   | /* vacío */;
+lista_parametros ::= lista_parametros:lista COMA parametro:param 
+                   {: 
+                       if (lista.toString().equals("sin_parametros")) {
+                           RESULT = param;
+                       } else {
+                           RESULT = lista + "," + param;
+                       }
+                   :}
+                   | parametro:param 
+                   {: RESULT = param; :}
+                   | /* vacío */
+                   {: RESULT = "sin_parametros"; :};
 
-parametro ::= tipo_dato IDENTIFIER;
+parametro ::= tipo_dato:tipo IDENTIFIER:nombre
+            {:
+                // Agregar parámetro a la tabla de símbolos del scope actual
+                addToSymbolTable(nombre.toString(), tipo.toString());
+                RESULT = tipo + "_" + nombre;
+            :};
 
-funcion_main ::= MAIN ESH_IZ EZH_DE bloque;
+funcion_main ::= MAIN ESH_IZ EZH_DE 
+               {:
+                   enterScope("main");
+               :}
+               bloque:b
+               {:
+                   exitScope();
+                   RESULT = "main";
+               :};
 
 /* Bloques y sentencias */
-bloque ::= INIT_BLOC sentencias END_BLOC;
+bloque ::= INIT_BLOC sentencias:s END_BLOC
+         {: RESULT = "bloque"; :};
 
-sentencias ::= sentencias sentencia 
-             | /* vacío */;
+sentencias ::= sentencias:ss sentencia:s 
+             {: RESULT = "sentencias"; :}
+             | /* vacío */
+             {: RESULT = "sentencias_vacias"; :};
 
-sentencia ::= estructura_control 
-            | declaracion_var FINLINEA 
-            | asignacion FINLINEA 
-            | retorno FINLINEA 
-            | lectura FINLINEA 
-            | escritura FINLINEA 
+sentencia ::= estructura_control:ec 
+            {: RESULT = ec; :}
+            | declaracion_var:dv FINLINEA 
+            {: RESULT = dv; :}
+            | asignacion:a FINLINEA 
+            {: RESULT = a; :}
+            | retorno:r FINLINEA 
+            {: RESULT = r; :}
+            | lectura:l FINLINEA 
+            {: RESULT = l; :}
+            | escritura:e FINLINEA 
+            {: RESULT = e; :}
             | BREAK FINLINEA 
-            | llamada_funcion FINLINEA
-            | comentario;
+            {: RESULT = "break"; :}
+            | llamada_funcion:lf FINLINEA
+            {: RESULT = lf; :}
+            | comentario:c
+            {: RESULT = c; :};
 
 /* Estructuras de control */
-estructura_control ::= if_stmt 
-                     | do_while 
-                     | for_stmt 
-                     | switch_stmt
+estructura_control ::= if_stmt:i 
+                     {: RESULT = i; :}
+                     | do_while:dw 
+                     {: RESULT = dw; :}
+                     | for_stmt:fs 
+                     {: RESULT = fs; :}
+                     | switch_stmt:ss
+                     {: RESULT = ss; :}
                      | error {:
                          report_error("Error en estructura de control", cur_token);
+                         RESULT = "error_control";
                        :};
 
-if_stmt ::= IF ESH_IZ exprPrin EZH_DE bloque elif_list else_stmt;
+if_stmt ::= IF ESH_IZ exprPrin:cond EZH_DE 
+          {:
+              String newScope = generateUniqueScope();
+              enterScope(newScope);
+          :}
+          bloque:b elif_list:el else_stmt:es
+          {:
+              exitScope();
+              RESULT = "if";
+          :};
 
-elif_list ::= ELIF ESH_IZ exprPrin EZH_DE bloque elif_list 
-            | /* vacío */;
+elif_list ::= ELIF ESH_IZ exprPrin:cond EZH_DE 
+            {:
+                String newScope = generateUniqueScope();
+                enterScope(newScope);
+            :}
+            bloque:b 
+            {:
+                exitScope();
+            :}
+            elif_list:el 
+            {: RESULT = "elif_list"; :}
+            | /* vacío */
+            {: RESULT = "sin_elif"; :};
 
-else_stmt ::= ELSE bloque 
-            | /* vacío */;
+else_stmt ::= ELSE 
+            {:
+                String newScope = generateUniqueScope();
+                enterScope(newScope);
+            :}
+            bloque:b
+            {:
+                exitScope();
+                RESULT = "else";
+            :}
+            | /* vacío */
+            {: RESULT = "sin_else"; :};
  
-do_while ::= DO bloque WHILE ESH_IZ exprPrin EZH_DE FINLINEA;
+do_while ::= DO 
+           {:
+               String newScope = generateUniqueScope();
+               enterScope(newScope);
+           :}
+           bloque:b WHILE ESH_IZ exprPrin:cond EZH_DE FINLINEA
+           {:
+               exitScope();
+               RESULT = "do_while";
+           :};
 
-for_stmt ::= FOR ESH_IZ init_for FINLINEA exprPrin FINLINEA exprPrin EZH_DE bloque;
+for_stmt ::= FOR ESH_IZ init_for:init FINLINEA exprPrin:cond FINLINEA exprPrin:inc EZH_DE 
+           {:
+               String newScope = generateUniqueScope();
+               enterScope(newScope);
+           :}
+           bloque:b
+           {:
+               exitScope();
+               RESULT = "for";
+           :};
 
-init_for ::= declaracion_var 
-           | asignacion;
+init_for ::= declaracion_var:dv 
+           {: RESULT = dv; :}
+           | asignacion:a
+           {: RESULT = a; :};
 
-switch_stmt ::= SWITCH ESH_IZ exprPrin EZH_DE INIT_BLOC case_list default_case END_BLOC;
+switch_stmt ::= SWITCH ESH_IZ exprPrin:expr EZH_DE INIT_BLOC 
+              {:
+                  String newScope = generateUniqueScope();
+                  enterScope(newScope);
+              :}
+              case_list:cl default_case:dc END_BLOC
+              {:
+                  exitScope();
+                  RESULT = "switch";
+              :};
 
-case_list ::= case_list case_item
-            | /* vacío */;
+case_list ::= case_list:cl case_item:ci
+            {: RESULT = "case_list"; :}
+            | /* vacío */
+            {: RESULT = "sin_cases"; :};
 
-case_item ::= CASE case_value DOSPUNTOS sentencias;
+case_item ::= CASE case_value:cv DOSPUNTOS sentencias:s
+            {: RESULT = "case"; :};
 
-case_value ::= INTEGER_LITERAL 
-             | CHAR_LITERAL;
+case_value ::= INTEGER_LITERAL:il 
+             {: RESULT = il; :}
+             | CHAR_LITERAL:cl
+             {: RESULT = cl; :};
 
-default_case ::= DEFAULT DOSPUNTOS sentencias
-               | /* vacío */;
+default_case ::= DEFAULT DOSPUNTOS sentencias:s
+               {: RESULT = "default"; :}
+               | /* vacío */
+               {: RESULT = "sin_default"; :};
 
 /* Variables y asignaciones */
-declaracion_var ::= tipo_dato IDENTIFIER declaracion_init
-                  | tipo_dato IDENTIFIER PIPE exprPrin PIPE exprPrin
-                  | GLOBAL tipo_dato IDENTIFIER declaracion_init FINLINEA;
+declaracion_var ::= tipo_dato:tipo IDENTIFIER:nombre declaracion_init:init
+                  {:
+                      addToSymbolTable(nombre.toString(), tipo.toString());
+                      RESULT = "declaracion_" + nombre;
+                  :}
+                  | tipo_dato:tipo IDENTIFIER:nombre PIPE exprPrin:dim1 PIPE exprPrin:dim2
+                  {:
+                      String arrayType = tipo + "[" + dim1 + "][" + dim2 + "]";
+                      addToSymbolTable(nombre.toString(), arrayType);
+                      RESULT = "declaracion_array_" + nombre;
+                  :}
+                  | GLOBAL tipo_dato:tipo IDENTIFIER:nombre declaracion_init:init FINLINEA
+                  {:
+                      String oldScope = currentScope;
+                      currentScope = "global";
+                      addToSymbolTable(nombre.toString(), tipo.toString());
+                      currentScope = oldScope;
+                      RESULT = "declaracion_global_" + nombre;
+                  :};
 
-declaracion_init ::= ASIGNA exprPrin
-                   | /* vacío */;
+declaracion_init ::= ASIGNA exprPrin:expr
+                   {: RESULT = "inicializada"; :}
+                   | /* vacío */
+                   {: RESULT = "sin_inicializar"; :};
 
-asignacion ::= IDENTIFIER ASIGNA exprPrin 
-             | accesoArreglo ASIGNA exprPrin;
+asignacion ::= IDENTIFIER:nombre ASIGNA exprPrin:expr 
+             {:
+                 if (!variableExists(nombre.toString())) {
+                     report_error("Variable '" + nombre + "' no ha sido declarada", cur_token);
+                 }
+                 RESULT = "asignacion_" + nombre;
+             :}
+             | accesoArreglo:acc ASIGNA exprPrin:expr
+             {: RESULT = "asignacion_array"; :};
 
 /* Expresiones */
-exprPrin ::= exprLog;
+exprPrin ::= exprLog:el
+           {: RESULT = el; :};
 
-exprLog ::= exprLog operadorLog exprRel 
-          | exprRel 
-          | NEGACION exprRel;
+exprLog ::= exprLog:el operadorLog:op exprRel:er 
+          {: RESULT = "expr_log"; :}
+          | exprRel:er 
+          {: RESULT = er; :}
+          | NEGACION exprRel:er
+          {: RESULT = "negacion"; :};
 
 operadorLog ::= DISYUNCION 
-              | CONJUNCION;
+              {: RESULT = "||"; :}
+              | CONJUNCION
+              {: RESULT = "&&"; :};
 
-exprRel ::= exprArit operadorRel exprArit 
-          | exprArit;
+exprRel ::= exprArit:ea1 operadorRel:op exprArit:ea2 
+          {: RESULT = "expr_rel"; :}
+          | exprArit:ea
+          {: RESULT = ea; :};
 
 operadorRel ::= MAYOR 
+              {: RESULT = ">"; :}
               | MENOR 
+              {: RESULT = "<"; :}
               | MAYORIGUAL 
+              {: RESULT = ">="; :}
               | MENORIGUAL 
+              {: RESULT = "<="; :}
               | COMPARACION 
-              | DIFERENTE;
+              {: RESULT = "=="; :}
+              | DIFERENTE
+              {: RESULT = "!="; :};
 
-exprArit ::= exprArit operadorArit termino 
-           | termino 
-           | operandoUnario;
+exprArit ::= exprArit:ea operadorArit:op termino:t 
+           {: RESULT = "expr_arit"; :}
+           | termino:t 
+           {: RESULT = t; :}
+           | operandoUnario:ou
+           {: RESULT = ou; :};
 
-termino ::= termino MULTIPLICA factor 
-          | termino DIVIDE factor 
-          | termino MODULO factor 
-          | factor;
+termino ::= termino:t MULTIPLICA factor:f 
+          {: RESULT = "mult"; :}
+          | termino:t DIVIDE factor:f 
+          {: RESULT = "div"; :}
+          | termino:t MODULO factor:f 
+          {: RESULT = "mod"; :}
+          | factor:f
+          {: RESULT = f; :};
 
 operadorArit ::= SUMA 
+               {: RESULT = "+"; :}
                | RESTA 
+               {: RESULT = "-"; :}
                | MULTIPLICA 
+               {: RESULT = "*"; :}
                | DIVIDE 
+               {: RESULT = "/"; :}
                | MODULO 
-               | POTENCIA;
+               {: RESULT = "%"; :}
+               | POTENCIA
+               {: RESULT = "^"; :};
 
-operandoUnario ::= signo_unario factor 
-                 | INCREMENTO IDENTIFIER 
-                 | DECREMENTO IDENTIFIER;
+operandoUnario ::= signo_unario:signo factor:f 
+                 {: RESULT = "unario_" + signo; :}
+                 | INCREMENTO IDENTIFIER:nombre 
+                 {:
+                     if (!variableExists(nombre.toString())) {
+                         report_error("Variable '" + nombre + "' no ha sido declarada", cur_token);
+                     }
+                     RESULT = "incremento_" + nombre;
+                 :}
+                 | DECREMENTO IDENTIFIER:nombre
+                 {:
+                     if (!variableExists(nombre.toString())) {
+                         report_error("Variable '" + nombre + "' no ha sido declarada", cur_token);
+                     }
+                     RESULT = "decremento_" + nombre;
+                 :};
 
 signo_unario ::= SUMA 
-               | RESTA;
+               {: RESULT = "+"; :}
+               | RESTA
+               {: RESULT = "-"; :};
 
 /* Acceso a arreglos */
-accesoArreglo ::= IDENTIFIER BRACEIZQ exprPrin BRACEDER 
-                | IDENTIFIER BRACEIZQ exprPrin COMA exprPrin BRACEDER;
+accesoArreglo ::= IDENTIFIER:nombre BRACEIZQ exprPrin:idx BRACEDER 
+                {: 
+                    if (!variableExists(nombre.toString())) {
+                        report_error("Variable '" + nombre + "' no ha sido declarada", cur_token);
+                    }
+                    RESULT = "acceso_array_" + nombre; 
+                :}
+                | IDENTIFIER:nombre BRACEIZQ exprPrin:idx1 COMA exprPrin:idx2 BRACEDER
+                {: 
+                    if (!variableExists(nombre.toString())) {
+                        report_error("Variable '" + nombre + "' no ha sido declarada", cur_token);
+                    }
+                    RESULT = "acceso_matrix_" + nombre; 
+                :};
 
 /* Llamadas a funciones */
-llamada_funcion ::= IDENTIFIER ESH_IZ lista_expresiones EZH_DE;
+llamada_funcion ::= IDENTIFIER:nombre ESH_IZ lista_expresiones:args EZH_DE
+                  {:
+                      if (!functionExists(nombre.toString())) {
+                          report_error("Función '" + nombre + "' no ha sido declarada", cur_token);
+                      }
+                      RESULT = "llamada_" + nombre;
+                  :};
 
-lista_expresiones ::= lista_expresiones COMA exprPrin 
-                    | exprPrin 
-                    | /* vacío */;
+lista_expresiones ::= lista_expresiones:le COMA exprPrin:ep 
+                    {: RESULT = "lista_expr"; :}
+                    | exprPrin:ep 
+                    {: RESULT = ep; :}
+                    | /* vacío */
+                    {: RESULT = "sin_args"; :};
 
 /* Retorno, lectura y escritura */
-retorno ::= RETURN exprPrin;
+retorno ::= RETURN exprPrin:expr
+          {: RESULT = "return"; :};
 
-lectura ::= LEER ESH_IZ IDENTIFIER EZH_DE;
+lectura ::= LEER ESH_IZ IDENTIFIER:nombre EZH_DE
+          {:
+              if (!variableExists(nombre.toString())) {
+                  report_error("Variable '" + nombre + "' no ha sido declarada", cur_token);
+              }
+              RESULT = "leer_" + nombre;
+          :};
 
-escritura ::= IMPRIMIR ESH_IZ exprPrin EZH_DE;
+escritura ::= IMPRIMIR ESH_IZ exprPrin:expr EZH_DE
+            {: RESULT = "imprimir"; :};
 
 /* Literales y valores */
-factor ::= INTEGER_LITERAL 
-         | FLOAT_LITERAL 
-         | CHAR_LITERAL 
-         | STRING_LITERAL 
+factor ::= INTEGER_LITERAL:il 
+         {: RESULT = "int_literal"; :}
+         | FLOAT_LITERAL:fl 
+         {: RESULT = "float_literal"; :}
+         | CHAR_LITERAL:cl 
+         {: RESULT = "char_literal"; :}
+         | STRING_LITERAL:sl 
+         {: RESULT = "string_literal"; :}
          | TRUE 
+         {: RESULT = "true"; :}
          | FALSE 
-         | llamada_funcion 
-         | accesoArreglo 
-         | IDENTIFIER 
-         | ESH_IZ exprPrin EZH_DE;
+         {: RESULT = "false"; :}
+         | llamada_funcion:lf 
+         {: RESULT = lf; :}
+         | accesoArreglo:aa 
+         {: RESULT = aa; :}
+         | IDENTIFIER:nombre 
+         {: 
+             if (!variableExists(nombre.toString())) {
+                 report_error("Variable '" + nombre + "' no ha sido declarada", cur_token);
+             }
+             RESULT = "var_" + nombre; 
+         :}
+         | ESH_IZ exprPrin:ep EZH_DE
+         {: RESULT = ep; :};
