@@ -1,13 +1,17 @@
+
 package org.example.ParserLexer;
 import java_cup.runtime.*;
 import org.example.ErrorHandler;
 import java.util.HashMap;
 import java.util.ArrayList;
+import java.util.Map;
+import java.util.List;
+import java.util.HashSet;
 
 action code {:
     /* CÓDIGO DE JAVA */
     public void hola(){
-        System.out.println("Inicio Cup"); 
+        System.out.println("Inicio Cup");
     }
 
     public void adios(){
@@ -19,6 +23,11 @@ parser code {:
     // Conectar este parser con un scanner
     BasicLexerCup lex;
     public static final int EXPECTED_CONFLICTS = 12;
+    boolean mainDefined = false;
+    private String tipoFuncionActual = null; //Guarda la funcion actual
+    String tipoSwitchActual = null; //Guarda el tipo de la variable del switch actual
+    HashSet<String> caseValues = null; //Guarda los case del switch para evitar repetidos
+
     
     // Variables para manejo de errores
     public int errorCount = 0;
@@ -28,13 +37,28 @@ parser code {:
     public void setErrorHandler(ErrorHandler handler) {
         this.errorHandler = handler;
     }
-    
+
     // Tabla de símbolos: scope -> lista de tipos de variables
     HashMap<String, ArrayList<String>> SymbolTable = new HashMap<>();
     
     // Scope actual
     String currentScope = "global";
     int scopeCounter = 0;
+
+
+    //Obtiene de que tipo es un string 
+    public String obtenerTipoLiteral(String literal) {
+        if (literal.matches("'.'")) {
+            return "char";
+        } else if (literal.matches("\\d+")) {
+            return "int";
+        } else if (literal.matches("\".*\"")) {
+            return "string";
+        }
+        return "desconocido";
+    }
+
+
     
     // Método para validar si una variable ya existe en el scope actual
     public boolean isVariableDeclared(String varName) {
@@ -53,8 +77,8 @@ parser code {:
     
     // Método para agregar una variable a la tabla de símbolos
     public void addToSymbolTable(String varName, String varType) {
-        if (isVariableDeclared(varName)) {
-            report_error("Variable '" + varName + "' ya ha sido declarada en el scope '" + currentScope + "'", null);
+        if (variableExists(varName)) {
+            report_SemanticError("Variable '" + varName + "' ya ha sido declarada en el scope '" + currentScope + "'", null);
             return;
         }
         
@@ -68,8 +92,8 @@ parser code {:
     
     // Método para agregar una función a la tabla de símbolos
     public void addFunctionToSymbolTable(String funcName, String returnType, ArrayList<String> parameters) {
-        if (isVariableDeclared(funcName)) {
-            report_error("Función '" + funcName + "' ya ha sido declarada", null);
+        if (variableExists(funcName)) {
+            report_SemanticError("Función '" + funcName + "' ya ha sido declarada", null);
             return;
         }
         
@@ -92,6 +116,42 @@ parser code {:
         SymbolTable.get(currentScope).add(funcSignature.toString());
         System.out.println("Función agregada: " + funcSignature.toString() + " en scope: " + currentScope);
     }
+
+    //Obtiene los parametros de una funcion en base a su nombre
+    public ArrayList<String> getTiposParametrosFuncion(String nombreFuncion) {
+        for (Map.Entry<String, ArrayList<String>> entry : SymbolTable.entrySet()) {
+            for (String simbolo : entry.getValue()) {
+                if (simbolo.startsWith(nombreFuncion + ":function(")) {
+                    int inicio = simbolo.indexOf('(') + 1;
+                    int fin = simbolo.indexOf(')');
+                    String params = simbolo.substring(inicio, fin);
+                    
+                    ArrayList<String> tipos = new ArrayList<>();
+                    if (!params.isEmpty()) {
+                        String[] partes = params.split(",");
+                        for (String p : partes) {
+                            String[] tipoNombre = p.split("_"); // ejemplo: int_a
+                            tipos.add(tipoNombre[0].trim());
+                        }
+                    }
+                    return tipos;
+                }
+            }
+        }
+        return new ArrayList<>(); // no encontrada, o sin parámetros
+    }
+
+    //Obtiene el tipo de cada parametro de una funcion
+    public ArrayList<String> getTiposDeLista(String args) {
+        ArrayList<String> tipos = new ArrayList<>();
+        if (args == null || args.equals("sin_args")) return tipos;
+
+        String[] partes = args.split(",");
+        for (String tipo : partes) {
+            tipos.add(tipo.trim());
+        }
+        return tipos;
+    }
     
     // Método para validar si una variable existe en cualquier scope accesible
     public boolean variableExists(String varName) {
@@ -112,6 +172,11 @@ parser code {:
         
         return false;
     }
+
+    //Quita las dimensiones de un array
+    public String quitarDimensiones(String tipoCompleto) {
+        return tipoCompleto.replaceAll("\\[.*?\\]", "");
+    }
     
     // Método para validar si una función existe
     public boolean functionExists(String funcName) {
@@ -125,6 +190,44 @@ parser code {:
         }
         return false;
     }
+
+    //Valida que dos tipos (string, char) sean iguales
+    public boolean tipoCompatible(String declarado, String asignado) {
+        if (declarado.equals(asignado)) return true;
+
+        if (asignado.equals("sin_inicializar")) return true;
+
+        // Ejemplo: permitir que un exprArit se asigne a int
+        if (declarado.equals("int") && asignado.equals("expr_arit")) return true;
+        
+
+        return false;
+    }
+
+
+    public String getTipoVariable(String varName) {
+    // Buscar en el scope actual
+        if (SymbolTable.containsKey(currentScope)) {
+            for (String entry : SymbolTable.get(currentScope)) {
+                if (entry.startsWith(varName + ":")) {
+                    return entry.split(":")[1];
+                }
+            }
+        }
+
+    // Si no está en el scope actual, buscar en global
+        if (!currentScope.equals("global") && SymbolTable.containsKey("global")) {
+            for (String entry : SymbolTable.get("global")) {
+                if (entry.startsWith(varName + ":") && !entry.contains("function")) {
+                    return entry.split(":")[1];
+                }
+            }
+        }
+
+        // Si no se encuentra
+        return "error";
+    }
+
     
     // Método para entrar en un nuevo scope
     public void enterScope(String scopeName) {
@@ -158,6 +261,7 @@ parser code {:
         System.out.println("========================\n");
     }
 
+    
     // Método para reportar errores
     public void report_error(String message, Object info) {
         StringBuilder errorMessage = new StringBuilder();
@@ -187,7 +291,42 @@ parser code {:
                 }
             }
             errorMessage.append(": " + message);
-            System.err.println(errorMessage.toString());
+            //System.err.println(errorMessage.toString());
+        }
+        
+        errorCount++;
+    }
+
+     // Método para reportar errores
+    public void report_SemanticError(String message, Object info) {
+        StringBuilder errorMessage = new StringBuilder();
+        int line = 0;
+        int column = 0;
+        
+        if (info instanceof java_cup.runtime.Symbol) {
+            java_cup.runtime.Symbol s = (java_cup.runtime.Symbol) info;
+            if (s.left >= 0) {
+                line = s.left + 1;
+                if (s.right >= 0) {
+                    column = s.right + 1;
+                }
+            }
+        }
+        
+        // Usar el ErrorHandler si está disponible
+        if (errorHandler != null) {
+            errorHandler.reportError(line, column, message, "SEMANTICO");
+        } else {
+            // Fallback al comportamiento original
+            errorMessage.append("Error semantico: ");
+            if (line > 0) {
+                errorMessage.append("línea " + line);
+                if (column > 0) {
+                    errorMessage.append(", columna " + column);
+                }
+            }
+            errorMessage.append(": " + message);
+            //System.err.println(errorMessage.toString());
         }
         
         errorCount++;
@@ -196,7 +335,9 @@ parser code {:
     // Método para recuperación de errores
     public void syntax_error(Symbol cur_token) {
         String tokenName = symbl_name_from_id(cur_token.sym);
-        String tokenValue = (cur_token.value != null) ? cur_token.value.toString() : "?";
+        String tokenValue = (cur_token.value != null) ? cur_token.value.toString() : "Token sin valor asignado";
+        
+        report_error("Error cerca de " + tokenName + " '" + tokenValue + "' ", cur_token);
         
         // Si hay un ErrorHandler y está en pánico, detener el análisis
         if (errorHandler != null && errorHandler.isInPanicMode() && !errorHandler.shouldContinue()) {
@@ -217,6 +358,7 @@ parser code {:
         throw new java.lang.Exception("Error sintáctico irrecuperable");
     }
     
+    
     public String symbl_name_from_id(int id) {
         return (id >= 0 && id < sym.terminalNames.length) ? 
                sym.terminalNames[id] : "UNKNOWN_TOKEN";
@@ -226,9 +368,6 @@ parser code {:
     public parser(BasicLexerCup lex){
         this.lex = lex;
         this.symbolFactory = new DefaultSymbolFactory();
-        
-        // Inicializar scope global
-        SymbolTable.put("global", new ArrayList<>());
         
         // Si el lexer tiene un ErrorHandler, lo usamos
         if (lex != null) {
@@ -268,8 +407,8 @@ non terminal exprArit, exprLog, exprRel, factor, exprPrin, termino;
 non terminal operadorLog, operadorRel, operadorArit, operandoUnario;
 non terminal accesoArreglo, lista_parametros, parametro, lista_expresiones;
 non terminal estructura_control, init_for, default_case, if_stmt, elif_list, else_stmt, do_while;
-non terminal for_stmt, switch_stmt, case_list, case_item, case_value, declaracion_init;
-non terminal declaracion_var, asignacion, llamada_funcion, retorno, lectura, escritura, funcion;
+non terminal for_stmt, switch_stmt, case_list, case_item, case_value, declaracion_init, end_for;
+non terminal declaracion_var,declaracion_global, asignacion, llamada_funcion, retorno, lectura, escritura, funcion;
 non terminal signo_unario, comentario;
 
 /* Precedencias */
@@ -286,16 +425,13 @@ precedence right INCREMENTO, DECREMENTO;
 start with programa;
 
 /* Programa */
-programa ::= declaraciones:d funcion_main:m declaraciones:d2
+
+programa ::= declaraciones:d 
             {: 
                 RESULT = "programa";
                 System.out.println("Programa parseado correctamente");
                 printSymbolTable();
-            :}
-            | error {:
-                report_error("Error en la estructura del programa", cur_token);
-                RESULT = "error_programa";
-              :};
+            :};
 
 /* Declaraciones */
 declaraciones ::= declaraciones:d declaracion:dec 
@@ -303,13 +439,17 @@ declaraciones ::= declaraciones:d declaracion:dec
                 | /* vacío */
                 {: RESULT = "declaraciones_vacias"; :};
 
-declaracion ::= declaracion_var:dv
+declaracion ::= declaracion_var:dv FINLINEA
               {: RESULT = dv; :}
+              | declaracion_global:dg 
+              {: RESULT = dg; :}
               | funcion:f
               {: RESULT = f; :}
               | comentario:c
-              {: RESULT = c; :};
-
+              {: RESULT = c; :}
+              | funcion_main:fm
+              {: RESULT = fm; :};
+              
 /* Comentarios - Simplificado para evitar conflictos */
 comentario ::= INIT_COMMENT END_COMMENT
              {: RESULT = "comentario"; :};
@@ -331,12 +471,17 @@ tipo_dato ::= INTEGER_T
             {: RESULT = "matrix_" + t; :};
 
 /* Funciones */
-funcion ::= FUNCTION tipo_dato:tipo IDENTIFIER:nombre ESH_IZ lista_parametros:params EZH_DE 
+
+funcion ::= FUNCTION tipo_dato:tipo IDENTIFIER:nombre ESH_IZ 
            {:
+               tipoFuncionActual = tipo.toString(); // <-- guardar tipo actual
                String oldScope = currentScope;
                enterScope(nombre.toString());
+
+           :}
+            lista_parametros:params EZH_DE 
+           {:
                
-               // Crear lista de parámetros para la función
                ArrayList<String> paramList = new ArrayList<>();
                if (params != null && !params.toString().equals("sin_parametros")) {
                    String[] paramArray = params.toString().split(",");
@@ -345,13 +490,13 @@ funcion ::= FUNCTION tipo_dato:tipo IDENTIFIER:nombre ESH_IZ lista_parametros:pa
                    }
                }
                
-               // Cambiar temporalmente al scope global para agregar la función
                currentScope = "global";
                addFunctionToSymbolTable(nombre.toString(), tipo.toString(), paramList);
                currentScope = nombre.toString();
            :}
-           bloque:b
+            bloque:b
            {:
+               tipoFuncionActual = null; // <-- limpiar
                exitScope();
                RESULT = "funcion_" + nombre;
            :};
@@ -378,7 +523,12 @@ parametro ::= tipo_dato:tipo IDENTIFIER:nombre
 
 funcion_main ::= MAIN ESH_IZ EZH_DE 
                {:
-                   enterScope("main");
+                   if (mainDefined) {
+                       report_SemanticError("Ya se ha definido una función 'main'. Solo se permite una.", cur_token);
+                   } else {
+                       mainDefined = true;
+                       enterScope("main");
+                   }
                :}
                bloque:b
                {:
@@ -412,7 +562,10 @@ sentencia ::= estructura_control:ec
             | llamada_funcion:lf FINLINEA
             {: RESULT = lf; :}
             | comentario:c
-            {: RESULT = c; :};
+            {: RESULT = c; :}
+            | error {:
+                  report_error("Error al realizar una sentencia", cur_token);
+                 :};
 
 /* Estructuras de control */
 estructura_control ::= if_stmt:i 
@@ -422,16 +575,17 @@ estructura_control ::= if_stmt:i
                      | for_stmt:fs 
                      {: RESULT = fs; :}
                      | switch_stmt:ss
-                     {: RESULT = ss; :}
-                     | error {:
-                         report_error("Error en estructura de control", cur_token);
-                         RESULT = "error_control";
-                       :};
+                     {: RESULT = ss; :};
 
 if_stmt ::= IF ESH_IZ exprPrin:cond EZH_DE 
           {:
               String newScope = generateUniqueScope();
               enterScope(newScope);
+
+                if (!cond.equals("expr_rel")) {
+                    report_error("La condición del 'if' debe ser de tipo 'expr_rel' (bool), no '" + cond + "'", cur_token);
+                }
+                RESULT = "if_error";
           :}
           bloque:b elif_list:el else_stmt:es
           {:
@@ -443,6 +597,11 @@ elif_list ::= ELIF ESH_IZ exprPrin:cond EZH_DE
             {:
                 String newScope = generateUniqueScope();
                 enterScope(newScope);
+
+                if (!cond.equals("expr_rel")) {
+                    report_error("La condición del 'elif' debe ser de tipo 'expr_rel' (bool), no '" + cond + "'", cur_token);
+                }
+                RESULT = "elif_error";
             :}
             bloque:b 
             {:
@@ -473,14 +632,23 @@ do_while ::= DO
            :}
            bloque:b WHILE ESH_IZ exprPrin:cond EZH_DE FINLINEA
            {:
+                if (!cond.equals("expr_rel")) {
+                    report_error("La condición del 'while' debe ser de tipo 'expr_rel' (bool), no '" + cond + "'", cur_token);
+                    RESULT = "while_error";
+                }
                exitScope();
                RESULT = "do_while";
            :};
 
-for_stmt ::= FOR ESH_IZ init_for:init FINLINEA exprPrin:cond FINLINEA exprPrin:inc EZH_DE 
+for_stmt ::= FOR ESH_IZ init_for:init FINLINEA exprPrin:cond FINLINEA end_for:inc EZH_DE 
            {:
                String newScope = generateUniqueScope();
                enterScope(newScope);
+
+               if (!cond.equals("expr_rel")) {
+                    report_error("La segunda condición del 'for' debe ser de tipo 'expr_rel' (bool), no '" + cond + "'", cur_token);
+                    RESULT = "for_error";
+                }
            :}
            bloque:b
            {:
@@ -493,13 +661,22 @@ init_for ::= declaracion_var:dv
            | asignacion:a
            {: RESULT = a; :};
 
+end_for ::= exprPrin:ep
+           {: RESULT = ep; :}
+           | asignacion:a
+           {: RESULT = a; :};
+
 switch_stmt ::= SWITCH ESH_IZ exprPrin:expr EZH_DE INIT_BLOC 
               {:
+                  tipoSwitchActual = expr.toString(); // Guardar tipo del switch
                   String newScope = generateUniqueScope();
                   enterScope(newScope);
+                  caseValues = new HashSet<>(); // <-- para evitar duplicados
               :}
               case_list:cl default_case:dc END_BLOC
               {:
+                  tipoSwitchActual = null; // Limpiar después de validar
+                  caseValues = null;
                   exitScope();
                   RESULT = "switch";
               :};
@@ -510,12 +687,27 @@ case_list ::= case_list:cl case_item:ci
             {: RESULT = "sin_cases"; :};
 
 case_item ::= CASE case_value:cv DOSPUNTOS sentencias:s
-            {: RESULT = "case"; :};
+            {:
+                String valor = cv.toString();
 
-case_value ::= INTEGER_LITERAL:il 
-             {: RESULT = il; :}
-             | CHAR_LITERAL:cl
-             {: RESULT = cl; :};
+                // Validar compatibilidad de tipo
+                String tipoActual = tipoSwitchActual.toString();
+                if (!tipoActual.equals(valor.toString())) {
+                    report_SemanticError("El valor '" + valor + "' no es compatible con el tipo del 'switch' (" + tipoSwitchActual + ")", cur_token);
+                }
+
+                // Validar duplicados
+                if (caseValues.contains(valor)) {
+                    report_SemanticError("Valor de 'case' duplicado: " + valor, cur_token);
+                } else {
+                    caseValues.add(valor);
+                }
+
+                RESULT = "case";
+            :};
+
+case_value ::= factor:f 
+            {: RESULT = f; :};
 
 default_case ::= DEFAULT DOSPUNTOS sentencias:s
                {: RESULT = "default"; :}
@@ -525,42 +717,99 @@ default_case ::= DEFAULT DOSPUNTOS sentencias:s
 /* Variables y asignaciones */
 declaracion_var ::= tipo_dato:tipo IDENTIFIER:nombre declaracion_init:init
                   {:
-                      addToSymbolTable(nombre.toString(), tipo.toString());
-                      RESULT = "declaracion_" + nombre;
+                    String tipoDeclarado = tipo.toString();
+                    String tipoInicializado = (init != null) ? init.toString() : null;
+
+                    if (tipoInicializado != null && !tipoCompatible(tipoDeclarado, tipoInicializado)) {
+                        report_SemanticError("No se puede asignar un valor de tipo '" + tipoInicializado + "' a una variable de tipo '" + tipoDeclarado + "'", cur_token);
+                    }
+
+                    addToSymbolTable(nombre.toString(), tipoDeclarado);
+                    RESULT = "declaracion_" + nombre;
                   :}
-                  | tipo_dato:tipo IDENTIFIER:nombre PIPE exprPrin:dim1 PIPE exprPrin:dim2
+                  | tipo_dato:tipo IDENTIFIER:nombre PIPE exprPrin:dim1 PIPE exprPrin:dim2 PIPE
                   {:
+
+                      if (!dim1.equals("int") || !dim2.equals("int")) {
+                        report_SemanticError("Las dimensiones del arreglo deben ser de tipo 'int'. Se encontró: [" 
+                                            + dim1 + ", " + dim2 + "]", cur_token);
+                      }
                       String arrayType = tipo + "[" + dim1 + "][" + dim2 + "]";
                       addToSymbolTable(nombre.toString(), arrayType);
                       RESULT = "declaracion_array_" + nombre;
                   :}
-                  | GLOBAL tipo_dato:tipo IDENTIFIER:nombre declaracion_init:init FINLINEA
+                  | tipo_dato:tipo IDENTIFIER:nombre PIPE exprPrin:dim1 PIPE
                   {:
-                      String oldScope = currentScope;
-                      currentScope = "global";
-                      addToSymbolTable(nombre.toString(), tipo.toString());
-                      currentScope = oldScope;
-                      RESULT = "declaracion_global_" + nombre;
+
+                      if (!dim1.equals("int")) {
+                        report_SemanticError("Las dimensiones del arreglo deben ser de tipo 'int'. Se encontró: [" 
+                                            + dim1 + "]", cur_token);
+                      }
+                      String arrayType = tipo + "[" + dim1 + "]";
+                      addToSymbolTable(nombre.toString(), arrayType);
+                      RESULT = "declaracion_array_" + nombre;
                   :};
 
+                  
+declaracion_global ::= GLOBAL tipo_dato:tipo IDENTIFIER:nombre declaracion_init:init FINLINEA
+                  {:
+                    String tipoDeclarado = tipo.toString();
+                    String tipoInicializado = (init != null) ? init.toString() : null;
+
+                    if (tipoInicializado != null && !tipoCompatible(tipoDeclarado, tipoInicializado)) {
+                        report_SemanticError("No se puede asignar un valor de tipo '" + tipoInicializado + "' a una variable de tipo '" + tipoDeclarado + "'", cur_token);
+                    }
+
+                    String oldScope = currentScope;
+                    currentScope = "global";
+                    addToSymbolTable(nombre.toString(), tipoDeclarado);
+                    currentScope = oldScope;
+
+                    RESULT = "declaracion_global_" + nombre;
+                :};
+
 declaracion_init ::= ASIGNA exprPrin:expr
-                   {: RESULT = "inicializada"; :}
+                   {: RESULT = expr; :}
                    | /* vacío */
                    {: RESULT = "sin_inicializar"; :};
 
 asignacion ::= IDENTIFIER:nombre ASIGNA exprPrin:expr 
              {:
                  if (!variableExists(nombre.toString())) {
-                     report_error("Variable '" + nombre + "' no ha sido declarada", cur_token);
+                     report_SemanticError("Variable '" + nombre + "' no ha sido declarada", cur_token);
+                 } else {
+                     String tipoVar = getTipoVariable(nombre.toString());
+                     String tipoExpr = expr.toString();
+
+                     if (!tipoCompatible(tipoVar, tipoExpr)) {
+                         report_SemanticError("No se puede asignar un valor de tipo '" + tipoExpr +
+                                      "' a una variable de tipo '" + tipoVar + "'", cur_token);
+                     }
                  }
                  RESULT = "asignacion_" + nombre;
              :}
              | accesoArreglo:acc ASIGNA exprPrin:expr
-             {: RESULT = "asignacion_array"; :};
+             {:
+                 if (!variableExists(acc.toString())) {
+                     report_SemanticError("Arreglo '" + acc.toString() + "' no ha sido declarado", cur_token);
+                 } else {
+                     String tipoCompleto = getTipoVariable(acc.toString());  // ej: int[][], string[]
+                     String tipoBase = quitarDimensiones(tipoCompleto);     // ej: int, string
+
+                     if (!tipoCompatible(tipoBase, expr.toString())) {
+                         report_SemanticError("No se puede asignar un valor de tipo '" + expr.toString() +
+                                              "' al elemento del arreglo de tipo '" + tipoBase + "'", cur_token);
+                     }
+                 }
+                 RESULT = "asignacion_array";
+             :};
 
 /* Expresiones */
 exprPrin ::= exprLog:el
-           {: RESULT = el; :};
+           {: RESULT = el; :}
+            | error {:
+                report_error("Error al generar la expresion", cur_token);
+            :}; 
 
 exprLog ::= exprLog:el operadorLog:op exprRel:er 
           {: RESULT = "expr_log"; :}
@@ -622,20 +871,20 @@ operadorArit ::= SUMA
                {: RESULT = "^"; :};
 
 operandoUnario ::= signo_unario:signo factor:f 
-                 {: RESULT = "unario_" + signo; :}
+                 {: RESULT = "opUnario"; :}
                  | INCREMENTO IDENTIFIER:nombre 
                  {:
                      if (!variableExists(nombre.toString())) {
-                         report_error("Variable '" + nombre + "' no ha sido declarada", cur_token);
+                         report_SemanticError("Variable '" + nombre + "' no ha sido declarada", cur_token);
                      }
-                     RESULT = "incremento_" + nombre;
+                     RESULT = "incremento";
                  :}
                  | DECREMENTO IDENTIFIER:nombre
                  {:
                      if (!variableExists(nombre.toString())) {
-                         report_error("Variable '" + nombre + "' no ha sido declarada", cur_token);
+                         report_SemanticError("Variable '" + nombre + "' no ha sido declarada", cur_token);
                      }
-                     RESULT = "decremento_" + nombre;
+                     RESULT = "decremento";
                  :};
 
 signo_unario ::= SUMA 
@@ -647,42 +896,86 @@ signo_unario ::= SUMA
 accesoArreglo ::= IDENTIFIER:nombre BRACEIZQ exprPrin:idx BRACEDER 
                 {: 
                     if (!variableExists(nombre.toString())) {
-                        report_error("Variable '" + nombre + "' no ha sido declarada", cur_token);
+                        report_SemanticError("Variable '" + nombre + "' no ha sido declarada", cur_token);
+                    }else {
+                        if (!idx.equals("int")) {
+                            report_SemanticError("El índice del arreglo debe ser de tipo 'int', no '" + idx + "'", cur_token);
+                        }
                     }
-                    RESULT = "acceso_array_" + nombre; 
+                    RESULT = nombre.toString(); 
                 :}
                 | IDENTIFIER:nombre BRACEIZQ exprPrin:idx1 COMA exprPrin:idx2 BRACEDER
                 {: 
                     if (!variableExists(nombre.toString())) {
-                        report_error("Variable '" + nombre + "' no ha sido declarada", cur_token);
+                        report_SemanticError("Variable '" + nombre + "' no ha sido declarada", cur_token);
+                    }else {
+                        if (!idx1.equals("int") || !idx2.equals("int")) {
+                            report_SemanticError("Los índices de la matriz deben ser de tipo 'int'. Se encontró: [" 
+                                                  + idx1 + ", " + idx2 + "]", cur_token);
+                        }
                     }
-                    RESULT = "acceso_matrix_" + nombre; 
+                    RESULT = nombre.toString(); 
                 :};
 
 /* Llamadas a funciones */
 llamada_funcion ::= IDENTIFIER:nombre ESH_IZ lista_expresiones:args EZH_DE
                   {:
-                      if (!functionExists(nombre.toString())) {
-                          report_error("Función '" + nombre + "' no ha sido declarada", cur_token);
-                      }
-                      RESULT = "llamada_" + nombre;
-                  :};
+                    String nombreFuncion = nombre.toString();
+
+                    if (!functionExists(nombreFuncion)) {
+                        report_SemanticError("Función '" + nombreFuncion + "' no ha sido declarada", cur_token);
+                    } else {
+                        ArrayList<String> tiposEsperados = getTiposParametrosFuncion(nombreFuncion);
+                        ArrayList<String> tiposRecibidos = (ArrayList<String>) args;
+
+                        if (tiposEsperados.size() != tiposRecibidos.size()) {
+                            report_SemanticError("Cantidad de argumentos inválida para la función '" +
+                                nombreFuncion + "'. Se esperaban " + tiposEsperados.size() +
+                                " y se recibieron " + tiposRecibidos.size(), cur_token);
+                        } else {
+                            for (int i = 0; i < tiposEsperados.size(); i++) {
+                                if (!tipoCompatible(tiposEsperados.get(i), tiposRecibidos.get(i))) {
+                                    report_SemanticError("Tipo de argumento inválido en la posición " + (i+1) +
+                                        " para la función '" + nombreFuncion + "'. Se esperaba '" +
+                                        tiposEsperados.get(i) + "' y se recibió '" + tiposRecibidos.get(i) + "'", cur_token);
+                                }
+                            }
+                        }
+                    }
+
+                    RESULT = "llamada_" + nombreFuncion;
+                :};
 
 lista_expresiones ::= lista_expresiones:le COMA exprPrin:ep 
-                    {: RESULT = "lista_expr"; :}
+                    {:
+                        List<String> lista = (List<String>) le;
+                        lista.add(ep.toString());  
+                        RESULT = lista;
+                    :}
                     | exprPrin:ep 
-                    {: RESULT = ep; :}
+                    {:
+                        List<String> lista = new ArrayList<>();
+                        lista.add(ep.toString());
+                        RESULT = lista;
+                    :}
                     | /* vacío */
-                    {: RESULT = "sin_args"; :};
+                    {:
+                        RESULT = new ArrayList<String>();
+                    :};
 
 /* Retorno, lectura y escritura */
-retorno ::= RETURN exprPrin:expr
-          {: RESULT = "return"; :};
+retorno ::= RETURN exprPrin:valor 
+           {:
+               if (!valor.equals(tipoFuncionActual)) {
+                   report_SemanticError("Tipo de retorno inválido. Se esperaba '" + tipoFuncionActual + "' pero se encontró '" + valor + "'", cur_token);
+               }
+               RESULT = "return_" + valor;
+           :};
 
 lectura ::= LEER ESH_IZ IDENTIFIER:nombre EZH_DE
           {:
-              if (!variableExists(nombre.toString())) {
-                  report_error("Variable '" + nombre + "' no ha sido declarada", cur_token);
+              if (!variableExists(nombre.toString()) || functionExists(nombre.toString())) {
+                  report_SemanticError("Variable '" + nombre + "' no ha sido declarada", cur_token);
               }
               RESULT = "leer_" + nombre;
           :};
@@ -692,13 +985,13 @@ escritura ::= IMPRIMIR ESH_IZ exprPrin:expr EZH_DE
 
 /* Literales y valores */
 factor ::= INTEGER_LITERAL:il 
-         {: RESULT = "int_literal"; :}
+         {: RESULT = "int"; :}
          | FLOAT_LITERAL:fl 
-         {: RESULT = "float_literal"; :}
+         {: RESULT = "float"; :}
          | CHAR_LITERAL:cl 
-         {: RESULT = "char_literal"; :}
+         {: RESULT = "char"; :}
          | STRING_LITERAL:sl 
-         {: RESULT = "string_literal"; :}
+         {: RESULT = "string"; :}
          | TRUE 
          {: RESULT = "true"; :}
          | FALSE 
@@ -706,13 +999,22 @@ factor ::= INTEGER_LITERAL:il
          | llamada_funcion:lf 
          {: RESULT = lf; :}
          | accesoArreglo:aa 
-         {: RESULT = aa; :}
+         {: 
+         if (!variableExists(aa.toString())) {
+                report_SemanticError("Arreglo '" + aa.toString() + "' no ha sido declarado", cur_token);
+            } 
+         String tipoCompleto = getTipoVariable(aa.toString());  // ej: int[][], string[]
+         String tipoBase = quitarDimensiones(tipoCompleto);     // ej: int, string   
+         RESULT = tipoBase; :}
          | IDENTIFIER:nombre 
          {: 
              if (!variableExists(nombre.toString())) {
-                 report_error("Variable '" + nombre + "' no ha sido declarada", cur_token);
+                report_SemanticError("Variable '" + nombre + "' no ha sido declarada", cur_token);
+                RESULT = "error";
+             } else {
+                 RESULT = getTipoVariable(nombre.toString());
              }
-             RESULT = "var_" + nombre; 
          :}
          | ESH_IZ exprPrin:ep EZH_DE
          {: RESULT = ep; :};
+

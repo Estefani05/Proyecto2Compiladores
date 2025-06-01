@@ -21,14 +21,12 @@ import org.example.ErrorHandler;
 
     private FileWriter tokenWriter;
 
-                                                                             
-
     // Método para inicializar el logger de tokens
     // Entrada: Ninguna
     // Salida: Archivo "tokens.log"
     private void initTokenLogger() {
         try {
-            tokenWriter = new FileWriter(System.getProperty("user.dir")+"/app/src/main/resources/tokens.log");
+            tokenWriter = new FileWriter("Proy1Comp/app/src/main/resources/tokens.log");
             tokenWriter.write("=== TOKENS ENCONTRADOS ===\n");
             tokenWriter.write(String.format("%-20s %-20s %-10s %-10s\n", 
                                 "TOKEN", "LEXEMA", "LINEA", "COLUMNA"));
@@ -53,9 +51,6 @@ import org.example.ErrorHandler;
     }
 
 
-
-
-
     // Método para crear un símbolo con tipo dado
     // Entrada: tipo del token (int)
     // Salida: objeto Symbol con línea y columna actuales
@@ -72,6 +67,19 @@ import org.example.ErrorHandler;
     }
 
 
+  // Método para cerrar el logger de tokens y exportar la tabla de símbolos
+  // Entrada: ninguna
+  // Salida: archivo de tokens cerrado y tabla de símbolos exportada
+    public void closeTokenLogger() {
+        if (tokenWriter != null) {
+            try {
+                tokenWriter.close();
+            } catch (IOException e) {
+                System.err.println("Error cerrando archivo de tokens: " + e.getMessage());
+                e.printStackTrace();
+            }
+        }
+    }
     
 
 
@@ -109,7 +117,7 @@ import org.example.ErrorHandler;
 
 %eof{
     System.out.println("Cerrando analizador lexico...");
-    //closeTokenLogger();
+    closeTokenLogger();
     System.out.println("Analizador lexico cerrado correctamente.");
 %eof}
 
@@ -124,7 +132,8 @@ EndOfLineComment     = "@" {InputCharacter}* {LineTerminator}?
 Identifier = [a-zA-Z]([a-zA-Z0-9])*
 DecIntegerLiteral = 0 | [1-9][0-9]*
 FloatingPointLiteral = [0-9]+ "." [0-9]+
-CharLiteral = "'" + ([^'\n\r\\] | "\\" [ntbrf\\']) + "'"
+CharLiteral = "'" ( [^'\n\r\\'] | "\\'" ) "'"
+
 
 %state STRING
 
@@ -202,7 +211,7 @@ CharLiteral = "'" + ([^'\n\r\\] | "\\" [ntbrf\\']) + "'"
   <YYINITIAL> "?"         { return symbol(sym.FINLINEA); }
   <YYINITIAL> "{"        { return symbol(sym.INIT_COMMENT); }
   <YYINITIAL> "}"        { return symbol(sym.END_COMMENT); }
-  <YYINITIAL> "\\"         { return symbol(sym.INIT_BLOC); }
+  <YYINITIAL> "(("         { return symbol(sym.INIT_BLOC); }
   <YYINITIAL> "/"         { return symbol(sym.END_BLOC); }
 
 <YYINITIAL> {
