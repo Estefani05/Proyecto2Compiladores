@@ -1,5 +1,5 @@
 
-global int juan = 2 ? 
+global int y = 2 ? 
 
 global string msg = "hola" ? 
 
@@ -32,7 +32,7 @@ main ʃʅ
 
   Switch ʃ x ʅ 
   ((
-    case "1":
+    case 1:
       y = 2?
       break?
     case 2:
@@ -41,6 +41,11 @@ main ʃʅ
     default:
       y = 3?
   /
+
+  do 
+  ((  
+      int juan = 6 ? 
+    / while ʃ x != 10 ʅ ? 
 
   for ʃ int i = 0 ? i < 10? i = i + 1 ʅ 
   ((
@@ -52,12 +57,12 @@ main ʃʅ
 function int f1 ʃ int num1 , string num2 ʅ
 ((
    num1 = "hola" ?
-   return 2?
+   return num1?
 /
 
 function string f2 ʃ int num1 , string num2 ʅ
 ((
-   f1 ʃ "num1" , num2 ʅ ?
+   f1 ʃ luna , num2 ʅ ?
    num1 = 2 ?
    return num2?
 /
